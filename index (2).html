@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Color and Weather Analyzer | Deep Learning Project</title>
+<meta name="description" content="A CNN that reads color percentages, dominant color, brightness, color temperature and weather condition from a photo or live camera.">
+<style>
+:root{--bg:#eef1f5;--card:#fff;--ink:#14202b;--mu:#5d6b79;--line:#d5dce4;--ac:#0b6e8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Segoe UI",system-ui,sans-serif}
+.w{max-width:1040px;margin:0 auto;padding:18px 14px 40px}
+h1{font:600 2rem/1.15 Georgia,"Times New Roman",serif;margin:.3em 0 .2em}
+h2{font:600 1.15rem Georgia,serif;margin:0 0 10px}
+p{margin:.3em 0}.mu{color:var(--mu)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
+.g{display:grid;gap:14px;grid-template-columns:1fr 1fr}
+.g>.card{margin:0}
+@media(max-width:780px){.g{grid-template-columns:1fr}}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+button,.btn{font:inherit;border:1px solid var(--line);background:#f6f8fa;color:var(--ink);padding:8px 14px;border-radius:8px;cursor:pointer}
+button.on{background:var(--ac);border-color:var(--ac);color:#fff}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #7cc4dc;outline-offset:2px}
+img#im,video{display:block;width:100%;max-height:340px;object-fit:contain;background:#0e1620;border-radius:8px;margin-top:10px}
+img#im:not([src]){display:none}
+.dom{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+#dom{width:64px;height:64px;border-radius:8px;border:1px solid var(--line);background:#ddd}
+#domt{font:600 1.4rem Georgia,serif}
+.r{display:grid;grid-template-columns:62px 1fr 130px;gap:8px;align-items:center;margin:5px 0;font-size:.88rem}
+.tr{height:12px;background:#e3e8ee;border-radius:6px;overflow:hidden}
+.tr i{display:block;height:100%;width:0;outline:1px solid #0002;transition:width .25s}
+.v{color:var(--mu);font-size:.8rem;text-align:right}
+table{border-collapse:collapse;width:100%;margin-top:6px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:.9rem}
+th{color:var(--mu);font-weight:600}
+.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;padding:0;list-style:none}
+.links a{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ac);text-decoration:none;font-weight:600}
+.links a:hover{background:#f1f7fa}
+.note{font-size:.82rem;color:var(--mu)}
+@media(prefers-reduced-motion:reduce){.tr i{transition:none}}
+</style>
+</head>
+<body>
+<div class="w">
+<header>
+  <h1>Color and Weather Analyzer</h1>
+  <p class="mu">Upload a photo or use your camera. Upload a photo for exact color detection (HSV formula) plus the weather class from the model. Live camera uses the deep learning model for colors, brightness, color temperature and weather condition.</p>
+  <p id="st" class="note">Loading model...</p>
+</header>
+
+<main class="g">
+  <section class="card" aria-label="Input">
+    <div class="tabs">
+      <button id="tu" class="on">Upload photo</button>
+      <button id="tc">Live camera</button>
+    </div>
+    <div id="pu">
+      <input type="file" id="f" accept="image/*" aria-label="Choose a photo">
+      <img id="im" alt="Selected photo">
+    </div>
+    <div id="pc" hidden>
+      <video id="v" autoplay playsinline muted></video>
+      <p><b>Wind estimate:</b> <span id="wd">waiting for camera...</span></p>
+      <p class="note">Estimated from motion between camera frames. Keep the camera steady and point it at trees, flags or grass. This is a rough estimate, not a measurement.</p>
+    </div>
+    <canvas id="c" hidden></canvas><canvas id="m" hidden></canvas>
+  </section>
+
+  <section class="card" aria-label="Results">
+    <h2>Results</h2>
+    <p class="note" id="src"></p>
+    <div class="dom"><div id="dom"></div><div><div class="note">Dominant color</div><div id="domt">-</div></div></div>
+    <div id="bars"></div>
+    <table>
+      <tr><th>Output</th><th>Model</th><th>HSV formula</th></tr>
+      <tbody id="bd"><tr><td colspan="3" class="mu">Choose a photo or start the camera.</td></tr></tbody>
+    </table>
+  </section>
+</main>
+
+<section class="card">
+  <h2>Local weather</h2>
+  <p class="mu">A photo alone cannot tell the real temperature or wind speed, so this reads them from the Open-Meteo weather service for your location.</p>
+  <button id="loc">Get temperature and wind speed</button>
+  <p id="env" style="margin-top:10px"></p>
+</section>
+
+<section class="card">
+  <h2>Dataset and code</h2>
+  <p><b>Dataset:</b> Multi-class Weather Dataset (Kaggle), 1500 images in 5 classes: cloudy, foggy, rainy, shine, sunrise. Plus 900 synthetic color images (solid colors, gradients, blocks, noise, blur) in a sixth class, other, meaning not a weather photo. Total 2400 images, split 70 / 15 / 15 into train, validation and test.</p>
+  <p><b>How colors are detected:</b> uploaded photos use the HSV formula directly (exact). The live camera uses the CNN, which was trained to predict the same values.</p>
+  <p><b>Labels:</b> weather comes from the folder name. Color percentages (11 colors), brightness and color temperature are generated automatically from each image with an HSV script.</p>
+  <p><b>Model:</b> MobileNetV2 transfer learning with one shared layer and 4 outputs: color percentages, brightness, color temperature and weather. Trained in two phases (frozen base, then fine-tuning) and converted to TensorFlow.js to run in your browser.</p>
+  <table>
+    <tr><th>Test result (360 images)</th><th>Score</th></tr>
+    <tr><td>Weather accuracy</td><td>98.1% (6 classes)</td></tr>
+    <tr><td>Color percentage error</td><td>7.3 points on average</td></tr>
+    <tr><td>Dominant color accuracy</td><td>60%</td></tr>
+    <tr><td>Brightness accuracy</td><td>77.5%</td></tr>
+    <tr><td>Color temperature accuracy</td><td>71.7%</td></tr>
+  </table>
+  <p class="note">Limits: 135 of the 360 test images are synthetic and easy, so weather accuracy on real photos only is lower than 98%. Blue and gray have the largest color error because sky and clouds overlap. Brightness and temperature labels come from thresholds, so images near a threshold are often confused.</p>
+</section>
+
+<section class="card">
+  <h2>Project links</h2>
+  <ul class="links">
+    <li><a href="https://github.com/YOUR-USERNAME/YOUR-REPO">GitHub repository (code, weights)</a></li>
+    <li><a href="https://www.kaggle.com/datasets/vijaygiitk/multiclass-weather-dataset">Dataset on Kaggle</a></li>
+    <li><a href="https://YOUR-REPORT-LINK">Project report</a></li>
+    <li><a href="https://YOUR-PRESENTATION-LINK">Presentation</a></li>
+    <li><a href="https://www.youtube.com/watch?v=YOUR-VIDEO-ID">YouTube video</a></li>
+    <li><a href="https://www.linkedin.com/posts/YOUR-POST">LinkedIn post</a></li>
+  </ul>
+  <p class="note">By Ghulam Alamgeer</p>
+</section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script>
+const COL=["red","orange","yellow","green","cyan","blue","purple","pink","black","white","gray"];
+const HEX={red:"#e53935",orange:"#fb8c00",yellow:"#fdd835",green:"#43a047",cyan:"#00bcd4",blue:"#1e88e5",purple:"#8e24aa",pink:"#ec407a",black:"#212121",white:"#f5f5f5",gray:"#9e9e9e"};
+const BR=["dark","medium","bright"],TP=["cool","neutral","warm"];
+let WX=["cloudy","foggy","other","rainy","shine","sunrise"]; /* replaced by tfjs_model/classes.json when present */
+const $=id=>document.getElementById(id);
+const am=a=>a.indexOf(Math.max(...a));
+let model=null,stream=null,timers=[],prev=null,mot=0,busy=false,camMode=false;
+
+$("bars").innerHTML=COL.map(c=>`<div class="r"><span>${c}</span><div class="tr"><i id="b_${c}" style="background:${HEX[c]}"></i></div><span class="v" id="t_${c}">-</span></div>`).join("");
+
+async function init(){
+  try{
+    model=await tf.loadLayersModel("tfjs_model/model.json");
+    try{const cj=await (await fetch("tfjs_model/classes.json")).json();if(cj.weather)WX=cj.weather;}catch(e){}
+    $("st").textContent="Model ready.";
+  }catch(e){
+    $("st").textContent="Model could not load ("+e.message+"). Showing the HSV formula results only.";
+  }
+}
+
+/* Same HSV rules used to create the training labels (OpenCV scale: H 0-179, S and V 0-255) */
+function hsvStats(d){
+  const n=d.length/4,cnt=new Array(11).fill(0);let sv=0;
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255;
+    const mx=Math.max(r,g,b),mn=Math.min(r,g,b),df=mx-mn;
+    let h=0;
+    if(df>0){h=mx===r?60*(((g-b)/df+6)%6):mx===g?60*((b-r)/df+2):60*((r-g)/df+4);}
+    const H=h/2,S=(mx?df/mx:0)*255,V=mx*255;
+    sv+=V;
+    let k;
+    if(V<50)k=8;
+    else if(S<40)k=V>200?9:10;
+    else if(H<10||H>=170)k=0;
+    else if(H<22)k=1;else if(H<35)k=2;else if(H<85)k=3;else if(H<100)k=4;
+    else if(H<130)k=5;else if(H<150)k=6;else k=7;
+    cnt[k]++;
+  }
+  const p=cnt.map(x=>x/n),mv=sv/n/255;
+  const dd=(p[0]+p[1]+p[2]+p[7])-(p[4]+p[5]+p[6]);
+  return {p,br:mv<.35?0:mv>.6?2:1,tp:dd>.1?2:dd<-.1?0:1};
+}
+
+async function analyze(src){
+  if(!(src.videoWidth||src.naturalWidth))return;
+  const cv=$("c");cv.width=224;cv.height=224;
+  const cx=cv.getContext("2d",{willReadFrequently:true});
+  cx.drawImage(src,0,0,224,224);
+  const ref=hsvStats(cx.getImageData(0,0,224,224).data);
+  let m=null;
+  if(model){
+    /* Same preprocessing as training: pixel / 127.5 - 1 */
+    const out=tf.tidy(()=>model.predict(tf.browser.fromPixels(cv).toFloat().div(127.5).sub(1).expandDims(0)));
+    const r=await Promise.all(out.map(t=>t.data()));
+    out.forEach(t=>t.dispose());
+    m={p:r[0],br:r[1],tp:r[2],wx:r[3]};
+  }
+  show(m,ref);
+}
+
+function show(m,r){
+  /* Upload: colors from the HSV formula. Live camera: colors from the deep learning model. */
+  const useModel=camMode&&!!m;
+  const p=Array.from(useModel?m.p:r.p);
+  $("src").textContent=useModel?"Colors: deep learning model (HSV formula shown in brackets). Brightness, temperature and weather: model.":"Colors: HSV formula (exact). Weather: deep learning model.";
+  COL.forEach((c,i)=>{
+    $("b_"+c).style.width=(p[i]*100)+"%";
+    const o=useModel?r.p[i]:(m?m.p[i]:null);
+    $("t_"+c).textContent=(p[i]*100).toFixed(1)+"%"+(o===null?"":" ("+(useModel?"HSV ":"model ")+(o*100).toFixed(1)+"%)");
+  });
+  const d=am(p);
+  $("dom").style.background=HEX[COL[d]];
+  $("domt").textContent=COL[d];
+  const f=(a,n)=>{a=Array.from(a);const k=am(a);return n[k]+" "+(a[k]*100).toFixed(0)+"%"};
+  const wx=a=>{a=Array.from(a);const k=am(a),c=" "+(a[k]*100).toFixed(0)+"%";return a[k]<.6?"uncertain ("+(a[k]*100).toFixed(0)+"%)":WX[k]==="other"?"not a weather photo"+c:WX[k]+c};
+  const rows=[["Brightness",m?f(m.br,BR):"-",BR[r.br]],["Color temperature",m?f(m.tp,TP):"-",TP[r.tp]],["Weather condition",m?wx(m.wx):"-","not available"]];
+  $("bd").innerHTML=rows.map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td></tr>`).join("");
+}
+
+/* Upload */
+$("f").onchange=e=>{
+  const fl=e.target.files[0];
+  if(!fl)return;
+  const im=$("im");
+  im.onload=()=>analyze(im);
+  im.src=URL.createObjectURL(fl);
+};
+
+/* Camera */
+function windUI(){
+  const s=mot;
+  $("wd").textContent=(s>10?"camera is moving, hold it steady":s<1.5?"calm":s<4?"breezy":"windy")+" (motion score "+s.toFixed(1)+")";
+}
+async function startCam(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false});
+  }catch(e){
+    $("wd").textContent="camera blocked. Allow camera access and use https.";
+    return;
+  }
+  $("v").srcObject=stream;
+  timers.push(setInterval(()=>{
+    const v=$("v");
+    if(!v.videoWidth)return;
+    const cv=$("m");cv.width=64;cv.height=48;
+    const cx=cv.getContext("2d",{willReadFrequently:true});
+    cx.drawImage(v,0,0,64,48);
+    const d=cx.getImageData(0,0,64,48).data,g=new Float32Array(64*48);
+    for(let i=0;i<g.length;i++)g[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
+    if(prev){let s=0;for(let i=0;i<g.length;i++)s+=Math.abs(g[i]-prev[i]);mot=mot*.8+(s/g.length)*.2;windUI();}
+    prev=g;
+  },150));
+  timers.push(setInterval(async()=>{
+    if(busy)return;busy=true;
+    try{await analyze($("v"));}finally{busy=false;}
+  },800));
+}
+function stopCam(){
+  timers.forEach(clearInterval);timers=[];prev=null;mot=0;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+}
+function tab(cam){
+  camMode=cam;prev=null;
+  $("bd").innerHTML='<tr><td colspan="3" class="mu">'+(cam?"Waiting for camera...":"Choose a photo or start the camera.")+'</td></tr>';
+  $("pu").hidden=cam;$("pc").hidden=!cam;
+  $("tu").classList.toggle("on",!cam);$("tc").classList.toggle("on",cam);
+  cam?startCam():stopCam();
+}
+$("tu").onclick=()=>tab(false);
+$("tc").onclick=()=>tab(true);
+
+/* Real temperature and wind speed from Open-Meteo (needs location permission) */
+$("loc").onclick=()=>{
+  $("env").textContent="Getting your location...";
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const {latitude:la,longitude:lo}=pos.coords;
+    try{
+      const res=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&current=temperature_2m,wind_speed_10m`);
+      const j=await res.json();
+      $("env").textContent="Temperature "+j.current.temperature_2m+" °C, wind speed "+j.current.wind_speed_10m+" km/h (source: Open-Meteo)";
+    }catch(e){
+      $("env").textContent="Could not reach the weather service. Check your internet connection.";
+    }
+  },()=>{$("env").textContent="Location permission was denied. Allow location access and try again.";});
+};
+
+init();
+</script>
+</body>
+</html>
